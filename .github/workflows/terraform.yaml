@@ -14,12 +14,12 @@ on:
       - 'envs/prod/**'
 
 env:
-  AWS_ACCOUNT_ID:    ${{ secrets.AWS_ACCOUNT_ID }}
-  AWS_ROLE_NAME:     ${{ secrets.AWS_ROLE_NAME }}
+  AWS_ACCOUNT_ID:     ${{ secrets.AWS_ACCOUNT_ID }}
+  AWS_ROLE_NAME:      ${{ secrets.AWS_ROLE_NAME }}
   AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
-  BUCKET_TF_STATE:   ${{ secrets.BUCKET_TF_STATE }}
-  DYNAMO_DB_LOCK:    ${{ secrets.DYNAMO_DB_LOCK }}
-  TF_DESTROY:        false
+  BUCKET_TF_STATE:    ${{ secrets.BUCKET_TF_STATE }}
+  DYNAMO_DB_LOCK:     ${{ secrets.DYNAMO_DB_LOCK }}
+  TF_DESTROY:         false
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
@@ -52,27 +52,42 @@ jobs:
           role-session-name: GitHubActionsSession
           aws-region: us-east-1
 
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Update kubeconfig before apply
+        run: |
+          aws eks update-kubeconfig \
+            --name retrogame-eks \
+            --region us-east-1
+        continue-on-error: true
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Init
+        id: init
         run: |
           terraform init \
             --backend-config="bucket=${BUCKET_TF_STATE}" \
             --backend-config="key=prod/eks/terraform.tfstate" \
             --backend-config="region=us-east-1" \
             --backend-config="dynamodb_table=${DYNAMO_DB_LOCK}"
-        id: init
 
       - name: Terraform Format Check
-        run: terraform fmt -check
         id: fmt
+        run: terraform fmt -check
 
       - name: Terraform Validate
-        run: terraform validate
         id: validate
+        run: terraform validate
 
       - name: Terraform Plan
+        id: plan
         run: |
           terraform plan \
             -no-color \
@@ -80,51 +95,39 @@ jobs:
             -lock=true \
             -out=planfile \
             --var-file=terraform.tfvars
-        id: plan
-       
-      - name: Import existing access entries
-        if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && env.TF_DESTROY == 'false' }}
-        run: |
-          terraform import \
-            module.eks.aws_eks_access_entry.admin \
-            retrogame-eks:arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:user/Tobi || true
-          terraform import \
-            module.eks.aws_eks_access_entry.pipeline \
-            retrogame-eks:arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:user/Tobi || true
-        id: import_access_entries  
 
       - name: Terraform Apply
+        id: apply
         if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && env.TF_DESTROY == 'false' }}
         run: terraform apply -lock=true -auto-approve planfile
-        id: apply
 
-      - name: Update kubeconfig
+      - name: Update kubeconfig after apply
+        id: update_kubeconfig
         if: ${{ env.TF_DESTROY == 'false' }}
         run: |
           aws eks update-kubeconfig \
             --name retrogame-eks \
             --region us-east-1
-        id: update_kubeconfig
 
       - name: Apply Kubernetes manifests
+        id: apply_manifests
         if: ${{ env.TF_DESTROY == 'false' }}
         run: |
           kubectl apply -f ../../application.yaml
           kubectl apply -f ../../ingress.yaml
-        id: apply_manifests
 
       - name: Delete Kubernetes manifests before destroy
+        id: delete_manifests
         if: ${{ env.TF_DESTROY == 'true' }}
         run: |
           kubectl delete -f ../../ingress.yaml --ignore-not-found
           kubectl delete -f ../../application.yaml --ignore-not-found
-        id: delete_manifests
 
       - name: Terraform Destroy
+        id: destroy
         if: ${{ env.TF_DESTROY == 'true' }}
         run: |
           terraform destroy \
             --var-file=terraform.tfvars \
             -lock=false \
             -auto-approve
-        id: destroy

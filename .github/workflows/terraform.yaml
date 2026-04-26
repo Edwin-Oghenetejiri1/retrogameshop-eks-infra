@@ -20,6 +20,7 @@ env:
   BUCKET_TF_STATE:   ${{ secrets.BUCKET_TF_STATE }}
   DYNAMO_DB_LOCK:    ${{ secrets.DYNAMO_DB_LOCK }}
   TF_DESTROY:        false
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   id-token: write
@@ -42,7 +43,6 @@ jobs:
         uses: aquasecurity/tfsec-action@v1.0.0
         with:
           soft_fail: true
-          github_token: ${{ secrets.GITHUB_TOKEN }}
           working_directory: ./envs/prod/
 
       - name: Configure AWS credentials using OIDC

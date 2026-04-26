@@ -46,7 +46,7 @@ provider "aws" {
 }
 
 provider "kubectl" {
-  host                   = module.eks.cluster_endpoint
+  host = module.eks.cluster_endpoint
   # UPDATED: Matches output name in module
   cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
   load_config_file       = false
@@ -59,7 +59,7 @@ provider "kubectl" {
 }
 
 provider "kubernetes" {
-  host                   = module.eks.cluster_endpoint
+  host = module.eks.cluster_endpoint
   # UPDATED: Matches output name in module
   cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
 
@@ -72,7 +72,7 @@ provider "kubernetes" {
 
 provider "helm" {
   kubernetes {
-    host                   = module.eks.cluster_endpoint
+    host = module.eks.cluster_endpoint
     # UPDATED: Matches output name in module
     cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
 

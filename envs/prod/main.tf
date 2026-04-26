@@ -90,6 +90,3 @@ module "karpenter" {
 
 
 
-
-
-

@@ -27,10 +27,8 @@ permissions:
   contents: read
 
 jobs:
-
-  # ─── JOB 1: PROVISION EKS INFRASTRUCTURE ──────────────────────────────────
-  terraform:
-    name: Terraform EKS Infrastructure
+  deploy-infrastructure:
+    name: Deploy EKS Infrastructure
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -89,50 +87,47 @@ jobs:
         if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && env.TF_DESTROY == 'false' }}
         run: terraform apply -lock=true -auto-approve planfile
 
-      - name: Terraform Destroy
-        id: destroy
-        if: ${{ env.TF_DESTROY == 'true' }}
-        run: |
-          terraform destroy \
-            --var-file=terraform.tfvars \
-            -lock=false \
-            -auto-approve
-
-  # ─── JOB 2: INSTALL ADDONS + DEPLOY MANIFESTS ─────────────────────────────
-  deploy:
-    name: Install Addons and Deploy
-    runs-on: ubuntu-latest
-    needs: terraform
-    if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials using OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.AWS_ROLE_NAME }}
-          role-session-name: GitHubActionsSession
-          aws-region: us-east-1
-
       - name: Install kubectl
+        if: ${{ env.TF_DESTROY == 'false' }}
         run: |
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/kubectl
 
-      - name: Install Helm
-        run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
       - name: Update kubeconfig
+        if: ${{ env.TF_DESTROY == 'false' }}
         run: |
           aws eks update-kubeconfig \
             --name retrogame-eks \
             --region us-east-1
 
-      - name: Patch ArgoCD to run insecure
+      - name: Fix Karpenter pod identity namespace
+        if: ${{ env.TF_DESTROY == 'false' }}
+        run: |
+          ASSOC_ID=$(aws eks list-pod-identity-associations \
+            --cluster-name retrogame-eks \
+            --region us-east-1 \
+            --query 'associations[?namespace==`kube-system` && serviceAccount==`karpenter`].associationId' \
+            --output text)
+          if [ ! -z "$ASSOC_ID" ]; then
+            aws eks delete-pod-identity-association \
+              --cluster-name retrogame-eks \
+              --association-id $ASSOC_ID \
+              --region us-east-1
+            ROLE_ARN=$(aws iam list-roles \
+              --query 'Roles[?contains(RoleName, `KarpenterController`)].Arn' \
+              --output text | head -1)
+            aws eks create-pod-identity-association \
+              --cluster-name retrogame-eks \
+              --namespace karpenter \
+              --service-account karpenter \
+              --role-arn $ROLE_ARN \
+              --region us-east-1
+            kubectl rollout restart deployment -n karpenter || true
+          fi
+
+      - name: Patch ArgoCD insecure mode
+        if: ${{ env.TF_DESTROY == 'false' }}
         run: |
           kubectl patch configmap argocd-cmd-params-cm \
             -n argocd \
@@ -141,58 +136,15 @@ jobs:
           kubectl rollout restart deployment \
             argo-cd-argocd-server -n argocd || true
 
-      - name: Fix Karpenter pod identity association
+      - name: Apply Kubernetes manifests
+        id: apply_manifests
+        if: ${{ env.TF_DESTROY == 'false' }}
         run: |
-          # Delete wrong association if exists
-          ASSOC_ID=$(aws eks list-pod-identity-associations \
-            --cluster-name retrogame-eks \
-            --region us-east-1 \
-            --query 'associations[?namespace==`kube-system` && serviceAccount==`karpenter`].associationId' \
-            --output text)
-          
-          if [ ! -z "$ASSOC_ID" ]; then
-            aws eks delete-pod-identity-association \
-              --cluster-name retrogame-eks \
-              --association-id $ASSOC_ID \
-              --region us-east-1
-          fi
+          kubectl apply -f ../../application.yaml
+          kubectl apply -f ../../ingress.yaml
 
-          # Get Karpenter role ARN
-          ROLE_ARN=$(aws iam get-role \
-            --role-name KarpenterController-$(aws eks describe-cluster \
-              --name retrogame-eks \
-              --query 'cluster.createdAt' \
-              --output text | tr -d '-:T' | cut -c1-14) \
-            --query 'Role.Arn' \
-            --output text 2>/dev/null || \
-            aws iam list-roles \
-              --query 'Roles[?contains(RoleName, `KarpenterController`)].Arn' \
-              --output text | head -1)
-
-          # Create correct association
-          aws eks create-pod-identity-association \
-            --cluster-name retrogame-eks \
-            --namespace karpenter \
-            --service-account karpenter \
-            --role-arn $ROLE_ARN \
-            --region us-east-1 || true
-
-          # Restart Karpenter
-          kubectl rollout restart deployment -n karpenter || true
-
-      - name: Apply ArgoCD application
-        run: |
-          # Wait for ArgoCD CRDs
-          kubectl wait --for=condition=established \
-            crd/applications.argoproj.io \
-            --timeout=120s || true
-          kubectl apply -f application.yaml
-
-      - name: Apply ingress
-        run: |
-          kubectl apply -f ingress.yaml
-
-      - name: Verify deployments
+      - name: Verify deployment
+        if: ${{ env.TF_DESTROY == 'false' }}
         run: |
           echo "=== Nodes ==="
           kubectl get nodes
@@ -200,3 +152,19 @@ jobs:
           kubectl get pods -A
           echo "=== Ingress ==="
           kubectl get ingress -A
+
+      - name: Delete manifests before destroy
+        id: delete_manifests
+        if: ${{ env.TF_DESTROY == 'true' }}
+        run: |
+          kubectl delete -f ../../ingress.yaml --ignore-not-found
+          kubectl delete -f ../../application.yaml --ignore-not-found
+
+      - name: Terraform Destroy
+        id: destroy
+        if: ${{ env.TF_DESTROY == 'true' }}
+        run: |
+          terraform destroy \
+            --var-file=terraform.tfvars \
+            -lock=false \
+            -auto-approve

@@ -77,13 +77,16 @@ module "karpenter" {
   source  = "terraform-aws-modules/eks/aws//modules/karpenter"
   version = "~> 20.0"
 
-  cluster_name            = module.eks.cluster_name
-  namespace               = "karpenter" 
-  enable_pod_identity     = true
+  cluster_name                    = module.eks.cluster_name
+  namespace                       = "karpenter"
+  enable_pod_identity             = true
   create_pod_identity_association = true
 
   tags = {
     Environment = var.env
   }
 }
+
+
+
 

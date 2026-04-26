@@ -81,6 +81,17 @@ jobs:
             -out=planfile \
             --var-file=terraform.tfvars
         id: plan
+       
+      - name: Import existing access entries
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && env.TF_DESTROY == 'false' }}
+        run: |
+          terraform import \
+            module.eks.aws_eks_access_entry.admin \
+            retrogame-eks:arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:user/Tobi || true
+          terraform import \
+            module.eks.aws_eks_access_entry.pipeline \
+            retrogame-eks:arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:user/Tobi || true
+        id: import_access_entries  
 
       - name: Terraform Apply
         if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && env.TF_DESTROY == 'false' }}

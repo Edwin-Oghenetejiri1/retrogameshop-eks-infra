@@ -86,3 +86,6 @@ module "karpenter" {
     Environment = var.env
   }
 }
+
+
+

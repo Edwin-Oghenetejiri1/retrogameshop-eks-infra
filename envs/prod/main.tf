@@ -29,63 +29,7 @@ module "eks" {
   node_groups        = var.node_groups
 }
 
-#########################################################################################################
-#                                      EKS BLUEPRINTS ADDONS                                            #
-#########################################################################################################
-module "eks_blueprints_addons" {
-  source     = "aws-ia/eks-blueprints-addons/aws"
-  version    = "~> 1.0"
-  depends_on = [module.eks]
 
-  cluster_name      = module.eks.cluster_name
-  cluster_endpoint  = module.eks.cluster_endpoint
-  cluster_version   = module.eks.cluster_version
-  oidc_provider_arn = module.eks.oidc_provider_arn
-
-  # Core addons
-  eks_addons = {}
-
-  # ALB Controller — needed for ingress + Route 53
-  enable_aws_load_balancer_controller = true
-  aws_load_balancer_controller = {
-    set = [
-      {
-        name  = "vpcId"
-        value = module.vpc.vpc_id
-      }
-    ]
-  }
-
-  # Metrics server — needed for HPA
-  enable_metrics_server = true
-
-  # ArgoCD — GitOps
-  enable_argocd = true
-
-  # Prometheus + Grafana — monitoring
-  enable_kube_prometheus_stack = false
-
-  tags = {
-    Environment = var.env
-  }
-}
-
-#########################################################################################################
-#                                      KARPENTER                                                        #
-#########################################################################################################
-module "karpenter" {
-  source  = "terraform-aws-modules/eks/aws//modules/karpenter"
-  version = "~> 20.0"
-
-  cluster_name                    = module.eks.cluster_name
-  namespace                       = "karpenter"
-  enable_pod_identity             = true
-  create_pod_identity_association = true
-
-  tags = {
-    Environment = var.env
-  }
-}
 
 
 

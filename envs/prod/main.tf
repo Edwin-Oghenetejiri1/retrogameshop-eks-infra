@@ -41,25 +41,23 @@ resource "helm_release" "alb_controller" {
   namespace  = "kube-system"
   wait       = true
 
-  # FIXED: Syntax for Helm Provider v3.x
-  set = [
-    {
-      name  = "clusterName"
-      value = module.eks.cluster_name
-    },
-    {
-      name  = "serviceAccount.create"
-      value = "true"
-    },
-    {
-      name  = "region"
-      value = var.region
-    },
-    {
-      name  = "vpcId"
-      value = module.vpc.vpc_id
-    }
-  ]
+  # FIXED: Syntax for Helm Provider v2.x (using blocks, no '=' or '[]')
+  set {
+    name  = "clusterName"
+    value = module.eks.cluster_name
+  }
+  set {
+    name  = "serviceAccount.create"
+    value = "true"
+  }
+  set {
+    name  = "region"
+    value = var.region
+  }
+  set {
+    name  = "vpcId"
+    value = module.vpc.vpc_id
+  }
 }
 
 # 2. Metrics Server
@@ -80,12 +78,10 @@ resource "helm_release" "argocd" {
   create_namespace = true
   wait             = true
 
-  set = [
-    {
-      name  = "server.insecure"
-      value = "true"
-    }
-  ]
+  set {
+    name  = "server.insecure"
+    value = "true"
+  }
 }
 
 # 4. Karpenter
@@ -97,20 +93,18 @@ resource "helm_release" "karpenter" {
   namespace        = "karpenter"
   create_namespace = true
 
-  set = [
-    {
-      name  = "settings.clusterName"
-      value = module.eks.cluster_name
-    },
-    {
-      name  = "settings.clusterEndpoint"
-      value = module.eks.cluster_endpoint
-    },
-    {
-      name  = "serviceAccount.name"
-      value = "karpenter"
-    }
-  ]
+  set {
+    name  = "settings.clusterName"
+    value = module.eks.cluster_name
+  }
+  set {
+    name  = "settings.clusterEndpoint"
+    value = module.eks.cluster_endpoint
+  }
+  set {
+    name  = "serviceAccount.name"
+    value = "karpenter"
+  }
 }
 
 #########################################################################################################
@@ -159,8 +153,3 @@ resource "kubectl_manifest" "karpenter_node_pool" {
 
   depends_on = [kubectl_manifest.karpenter_node_class]
 }
-
-
-
-
-

@@ -11,7 +11,6 @@ terraform {
   required_version = ">= 1.0"
 
   # 2. Explicit Provider Sources
-  # This section stops the "hashicorp/kubectl" not found error
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -48,7 +47,8 @@ provider "aws" {
 
 provider "kubectl" {
   host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  # UPDATED: Matches output name in module
+  cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
   load_config_file       = false
 
   exec {
@@ -60,7 +60,8 @@ provider "kubectl" {
 
 provider "kubernetes" {
   host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  # UPDATED: Matches output name in module
+  cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
 
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
@@ -72,7 +73,8 @@ provider "kubernetes" {
 provider "helm" {
   kubernetes {
     host                   = module.eks.cluster_endpoint
-    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+    # UPDATED: Matches output name in module
+    cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
 
     exec {
       api_version = "client.authentication.k8s.io/v1beta1"

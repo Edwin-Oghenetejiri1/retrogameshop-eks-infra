@@ -50,7 +50,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.AWS_ROLE_NAME }}
           role-session-name: GitHubActionsSession
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -61,7 +61,7 @@ jobs:
           terraform init \
             --backend-config="bucket=${BUCKET_TF_STATE}" \
             --backend-config="key=prod/eks/terraform.tfstate" \
-            --backend-config="region=us-east-1" \
+            --backend-config="region=${AWS_DEFAULT_REGION}" \
             --backend-config="dynamodb_table=${DYNAMO_DB_LOCK}"
 
       - name: Terraform Format Check
@@ -87,84 +87,10 @@ jobs:
         if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && env.TF_DESTROY == 'false' }}
         run: terraform apply -lock=true -auto-approve planfile
 
-      - name: Install kubectl
-        if: ${{ env.TF_DESTROY == 'false' }}
+      # Verification step (replaces the long list of Helm installs)
+      - name: Verify Cluster Connection
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
         run: |
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/kubectl
-
-      - name: Update kubeconfig
-        if: ${{ env.TF_DESTROY == 'false' }}
-        run: |
-          aws eks update-kubeconfig \
-            --name retrogame-eks \
-            --region us-east-1
-
-      - name: Fix Karpenter pod identity namespace
-        if: ${{ env.TF_DESTROY == 'false' }}
-        run: |
-          ASSOC_ID=$(aws eks list-pod-identity-associations \
-            --cluster-name retrogame-eks \
-            --region us-east-1 \
-            --query 'associations[?namespace==`kube-system` && serviceAccount==`karpenter`].associationId' \
-            --output text)
-          if [ ! -z "$ASSOC_ID" ]; then
-            aws eks delete-pod-identity-association \
-              --cluster-name retrogame-eks \
-              --association-id $ASSOC_ID \
-              --region us-east-1
-            ROLE_ARN=$(aws iam list-roles \
-              --query 'Roles[?contains(RoleName, `KarpenterController`)].Arn' \
-              --output text | head -1)
-            aws eks create-pod-identity-association \
-              --cluster-name retrogame-eks \
-              --namespace karpenter \
-              --service-account karpenter \
-              --role-arn $ROLE_ARN \
-              --region us-east-1
-            kubectl rollout restart deployment -n karpenter || true
-          fi
-
-      - name: Patch ArgoCD insecure mode
-        if: ${{ env.TF_DESTROY == 'false' }}
-        run: |
-          kubectl patch configmap argocd-cmd-params-cm \
-            -n argocd \
-            --type merge \
-            -p '{"data":{"server.insecure":"true"}}' || true
-          kubectl rollout restart deployment \
-            argo-cd-argocd-server -n argocd || true
-
-      - name: Apply Kubernetes manifests
-        id: apply_manifests
-        if: ${{ env.TF_DESTROY == 'false' }}
-        run: |
-          kubectl apply -f ../../application.yaml
-          kubectl apply -f ../../ingress.yaml
-
-      - name: Verify deployment
-        if: ${{ env.TF_DESTROY == 'false' }}
-        run: |
-          echo "=== Nodes ==="
+          aws eks update-kubeconfig --name retrogame-eks --region ${{ env.AWS_DEFAULT_REGION }}
           kubectl get nodes
-          echo "=== Pods ==="
-          kubectl get pods -A
-          echo "=== Ingress ==="
-          kubectl get ingress -A
-
-      - name: Delete manifests before destroy
-        id: delete_manifests
-        if: ${{ env.TF_DESTROY == 'true' }}
-        run: |
-          kubectl delete -f ../../ingress.yaml --ignore-not-found
-          kubectl delete -f ../../application.yaml --ignore-not-found
-
-      - name: Terraform Destroy
-        id: destroy
-        if: ${{ env.TF_DESTROY == 'true' }}
-        run: |
-          terraform destroy \
-            --var-file=terraform.tfvars \
-            -lock=false \
-            -auto-approve
+          echo "Addons are being managed by Terraform state."

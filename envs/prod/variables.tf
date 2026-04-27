@@ -71,3 +71,8 @@ variable "node_groups" {
   }))
   description = "Node groups configuration"
 }
+
+variable "repo_url" {
+  type        = string
+  description = "URL of your k8s manifests GitHub repo"
+}

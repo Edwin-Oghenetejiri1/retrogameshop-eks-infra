@@ -30,18 +30,16 @@ module "eks" {
 }
 
 #########################################################################################################
-#                                 HELM ADDONS (THE BOOTSTRAP)                                           #
+#                                      AWS LOAD BALANCER CONTROLLER                                     #
 #########################################################################################################
-
-# 1. AWS Load Balancer Controller
 resource "helm_release" "alb_controller" {
   name       = "aws-load-balancer-controller"
-  repository = "https://github.io"
+  repository = "https://aws.github.io/eks-charts"
   chart      = "aws-load-balancer-controller"
   namespace  = "kube-system"
   wait       = true
+  depends_on = [module.eks]
 
-  # FIXED: Syntax for Helm Provider v2.x (using blocks, no '=' or '[]')
   set {
     name  = "clusterName"
     value = module.eks.cluster_name
@@ -60,23 +58,29 @@ resource "helm_release" "alb_controller" {
   }
 }
 
-# 2. Metrics Server
+#########################################################################################################
+#                                      METRICS SERVER                                                   #
+#########################################################################################################
 resource "helm_release" "metrics_server" {
   name       = "metrics-server"
-  repository = "https://github.io"
+  repository = "https://kubernetes-sigs.github.io/metrics-server/"
   chart      = "metrics-server"
   namespace  = "kube-system"
   wait       = true
+  depends_on = [module.eks]
 }
 
-# 3. ArgoCD
+#########################################################################################################
+#                                      ARGOCD                                                           #
+#########################################################################################################
 resource "helm_release" "argocd" {
   name             = "argo-cd"
-  repository       = "https://github.io"
+  repository       = "https://argoproj.github.io/argo-helm"
   chart            = "argo-cd"
   namespace        = "argocd"
   create_namespace = true
   wait             = true
+  depends_on       = [helm_release.alb_controller]
 
   set {
     name  = "server.insecure"
@@ -84,14 +88,18 @@ resource "helm_release" "argocd" {
   }
 }
 
-# 4. Karpenter
+#########################################################################################################
+#                                      KARPENTER                                                        #
+#########################################################################################################
 resource "helm_release" "karpenter" {
   name             = "karpenter"
   repository       = "oci://public.ecr.aws/karpenter"
   chart            = "karpenter"
-  version          = "1.0.1"
+  version          = "1.6.0"
   namespace        = "karpenter"
   create_namespace = true
+  wait             = false
+  depends_on       = [module.eks]
 
   set {
     name  = "settings.clusterName"
@@ -105,20 +113,28 @@ resource "helm_release" "karpenter" {
     name  = "serviceAccount.name"
     value = "karpenter"
   }
+  set {
+    name  = "env[0].name"
+    value = "AWS_REGION"
+  }
+  set {
+    name  = "env[0].value"
+    value = var.region
+  }
 }
 
 #########################################################################################################
-#                                 KARPENTER DEFAULT PROVISIONER                                         #
+#                                      KARPENTER NODE CLASS                                             #
 #########################################################################################################
-
 resource "kubectl_manifest" "karpenter_node_class" {
   yaml_body = <<-YAML
-    apiVersion: karpenter.k8s.aws/v1beta1
+    apiVersion: karpenter.k8s.aws/v1
     kind: EC2NodeClass
     metadata:
       name: default
     spec:
-      amiFamily: AL2
+      amiSelectorTerms:
+        - alias: "al2023@latest"
       role: "${var.cluster_name}-node-role"
       subnetSelectorTerms:
         - tags:
@@ -131,9 +147,12 @@ resource "kubectl_manifest" "karpenter_node_class" {
   depends_on = [helm_release.karpenter]
 }
 
+#########################################################################################################
+#                                      KARPENTER NODE POOL                                             #
+#########################################################################################################
 resource "kubectl_manifest" "karpenter_node_pool" {
   yaml_body = <<-YAML
-    apiVersion: karpenter.sh/v1beta1
+    apiVersion: karpenter.sh/v1
     kind: NodePool
     metadata:
       name: default
@@ -141,6 +160,8 @@ resource "kubectl_manifest" "karpenter_node_pool" {
       template:
         spec:
           nodeClassRef:
+            group: karpenter.k8s.aws
+            kind: EC2NodeClass
             name: default
           requirements:
             - key: "karpenter.sh/capacity-type"
@@ -149,7 +170,57 @@ resource "kubectl_manifest" "karpenter_node_pool" {
             - key: "kubernetes.io/arch"
               operator: In
               values: ["amd64"]
+            - key: "kubernetes.io/os"
+              operator: In
+              values: ["linux"]
+            - key: "karpenter.k8s.aws/instance-category"
+              operator: In
+              values: ["c", "m", "r"]
+            - key: "karpenter.k8s.aws/instance-generation"
+              operator: Gt
+              values: ["2"]
+          expireAfter: 720h
+      limits:
+        cpu: 1000
+      disruption:
+        consolidationPolicy: WhenEmptyOrUnderutilized
+        consolidateAfter: 1m
   YAML
 
   depends_on = [kubectl_manifest.karpenter_node_class]
 }
+
+#########################################################################################################
+#                                      ARGOCD REPO SECRET                                               #
+#########################################################################################################
+resource "kubernetes_secret" "argo_repo" {
+  metadata {
+    name      = "retrogame-repo"
+    namespace = "argocd"
+    labels = {
+      "argocd.argoproj.io/secret-type" = "repository"
+    }
+  }
+
+  data = {
+    url     = var.repo_url
+    project = "default"
+    type    = "git"
+  }
+
+  depends_on = [helm_release.argocd]
+}
+
+#########################################################################################################
+#                                      APP NAMESPACE                                                    #
+#########################################################################################################
+resource "kubernetes_namespace" "retrogame" {
+  metadata {
+    name = "retrogame"
+  }
+
+  depends_on = [module.eks]
+}
+
+
+

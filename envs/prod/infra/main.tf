@@ -1,5 +1,5 @@
 module "vpc" {
-  source = "../../modules/vpc"
+  source = "../../../modules/vpc"
 
   env                  = var.env
   vpc_name             = var.vpc_name
@@ -11,7 +11,7 @@ module "vpc" {
 }
 
 module "eks" {
-  source     = "../../modules/eks"
+  source     = "../../../modules/eks"
   depends_on = [module.vpc]
 
   cluster_name       = var.cluster_name
@@ -22,6 +22,9 @@ module "eks" {
   principal_arn_name = var.principal_arn_name
   node_groups        = var.node_groups
 }
+
+
+
 
 
 

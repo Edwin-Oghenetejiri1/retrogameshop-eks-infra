@@ -19,7 +19,7 @@ env:
   AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
   BUCKET_TF_STATE:    ${{ secrets.BUCKET_TF_STATE }}
   DYNAMO_DB_LOCK:     ${{ secrets.DYNAMO_DB_LOCK }}
-  TF_DESTROY:         false
+  TF_DESTROY:         true
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:

@@ -89,7 +89,26 @@ resource "helm_release" "argocd" {
 }
 
 #########################################################################################################
-#                                      KARPENTER                                                        #
+#                                      KARPENTER IAM                                                    #
+#########################################################################################################
+module "karpenter" {
+  source  = "terraform-aws-modules/eks/aws//modules/karpenter"
+  version = "~> 20.0"
+
+  cluster_name                    = module.eks.cluster_name
+  namespace                       = "karpenter"
+  enable_pod_identity             = true
+  create_pod_identity_association = true
+
+  tags = {
+    Environment = var.env
+  }
+
+  depends_on = [module.eks]
+}
+
+#########################################################################################################
+#                                      KARPENTER HELM                                                   #
 #########################################################################################################
 resource "helm_release" "karpenter" {
   name             = "karpenter"
@@ -99,7 +118,7 @@ resource "helm_release" "karpenter" {
   namespace        = "karpenter"
   create_namespace = true
   wait             = false
-  depends_on       = [module.eks]
+  depends_on       = [module.karpenter]
 
   set {
     name  = "settings.clusterName"
@@ -111,7 +130,11 @@ resource "helm_release" "karpenter" {
   }
   set {
     name  = "serviceAccount.name"
-    value = "karpenter"
+    value = module.karpenter.service_account
+  }
+  set {
+    name  = "settings.interruptionQueue"
+    value = module.karpenter.queue_name
   }
   set {
     name  = "env[0].name"
@@ -135,7 +158,7 @@ resource "kubectl_manifest" "karpenter_node_class" {
     spec:
       amiSelectorTerms:
         - alias: "al2023@latest"
-      role: "${var.cluster_name}-node-role"
+      role: "${module.karpenter.node_iam_role_name}"
       subnetSelectorTerms:
         - tags:
             karpenter.sh/discovery: "${module.eks.cluster_name}"
@@ -148,7 +171,7 @@ resource "kubectl_manifest" "karpenter_node_class" {
 }
 
 #########################################################################################################
-#                                      KARPENTER NODE POOL                                             #
+#                                      KARPENTER NODE POOL                                              #
 #########################################################################################################
 resource "kubectl_manifest" "karpenter_node_pool" {
   yaml_body = <<-YAML
@@ -221,39 +244,6 @@ resource "kubernetes_namespace" "retrogame" {
 
   depends_on = [module.eks]
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

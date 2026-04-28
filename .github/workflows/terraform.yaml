@@ -19,7 +19,7 @@ env:
   AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
   BUCKET_TF_STATE:    ${{ secrets.BUCKET_TF_STATE }}
   DYNAMO_DB_LOCK:     ${{ secrets.DYNAMO_DB_LOCK }}
-  TF_DESTROY:         false
+  TF_DESTROY:         true
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
@@ -72,6 +72,15 @@ jobs:
         id: validate
         run: terraform validate
 
+      - name: Import existing access entry if exists
+        id: import
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && env.TF_DESTROY == 'false' }}
+        run: |
+          terraform import \
+            module.eks.aws_eks_access_entry.admin \
+            retrogame-eks:arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:user/Tobi || true
+        continue-on-error: true
+
       - name: Terraform Plan
         id: plan
         run: |
@@ -87,10 +96,35 @@ jobs:
         if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && env.TF_DESTROY == 'false' }}
         run: terraform apply -lock=true -auto-approve planfile
 
-      # Verification step (replaces the long list of Helm installs)
-      - name: Verify Cluster Connection
-        if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+      - name: Install kubectl
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && env.TF_DESTROY == 'false' }}
         run: |
-          aws eks update-kubeconfig --name retrogame-eks --region ${{ env.AWS_DEFAULT_REGION }}
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+
+      - name: Verify Cluster Connection
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && env.TF_DESTROY == 'false' }}
+        run: |
+          aws eks update-kubeconfig \
+            --name retrogame-eks \
+            --region ${{ env.AWS_DEFAULT_REGION }}
           kubectl get nodes
-          echo "Addons are being managed by Terraform state."
+          kubectl get pods -A
+
+      - name: Delete manifests before destroy
+        if: ${{ env.TF_DESTROY == 'true' }}
+        run: |
+          aws eks update-kubeconfig \
+            --name retrogame-eks \
+            --region ${{ env.AWS_DEFAULT_REGION }} || true
+          kubectl delete -f ../../ingress.yaml --ignore-not-found || true
+          kubectl delete -f ../../application.yaml --ignore-not-found || true
+
+      - name: Terraform Destroy
+        id: destroy
+        if: ${{ env.TF_DESTROY == 'true' }}
+        run: |
+          terraform destroy \
+            --var-file=terraform.tfvars \
+            -lock=false \
+            -auto-approve

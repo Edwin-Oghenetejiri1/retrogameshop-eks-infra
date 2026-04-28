@@ -1,35 +1,4 @@
 #########################################################################################################
-#                                      VPC                                                              #
-#########################################################################################################
-module "vpc" {
-  source = "../../modules/vpc"
-
-  env                  = var.env
-  vpc_name             = var.vpc_name
-  cluster_name         = var.cluster_name
-  azs                  = var.azs
-  vpc_cidr             = var.vpc_cidr
-  private_subnets_cidr = var.private_subnets_cidr
-  public_subnets_cidr  = var.public_subnets_cidr
-}
-
-#########################################################################################################
-#                                      EKS                                                              #
-#########################################################################################################
-module "eks" {
-  source     = "../../modules/eks"
-  depends_on = [module.vpc]
-
-  cluster_name       = var.cluster_name
-  eks_version        = var.eks_version
-  subnet_ids         = module.vpc.private_subnet_ids
-  admin_arn          = var.admin_arn
-  principal_arn      = var.principal_arn
-  principal_arn_name = var.principal_arn_name
-  node_groups        = var.node_groups
-}
-
-#########################################################################################################
 #                                      AWS LOAD BALANCER CONTROLLER                                     #
 #########################################################################################################
 resource "helm_release" "alb_controller" {
@@ -38,11 +7,10 @@ resource "helm_release" "alb_controller" {
   chart      = "aws-load-balancer-controller"
   namespace  = "kube-system"
   wait       = true
-  depends_on = [module.eks]
 
   set {
     name  = "clusterName"
-    value = module.eks.cluster_name
+    value = data.terraform_remote_state.infra.outputs.cluster_name
   }
   set {
     name  = "serviceAccount.create"
@@ -54,7 +22,7 @@ resource "helm_release" "alb_controller" {
   }
   set {
     name  = "vpcId"
-    value = module.vpc.vpc_id
+    value = data.terraform_remote_state.infra.outputs.vpc_id
   }
 }
 
@@ -67,7 +35,6 @@ resource "helm_release" "metrics_server" {
   chart      = "metrics-server"
   namespace  = "kube-system"
   wait       = true
-  depends_on = [module.eks]
 }
 
 #########################################################################################################
@@ -95,7 +62,7 @@ module "karpenter" {
   source  = "terraform-aws-modules/eks/aws//modules/karpenter"
   version = "~> 20.0"
 
-  cluster_name                    = module.eks.cluster_name
+  cluster_name                    = data.terraform_remote_state.infra.outputs.cluster_name
   namespace                       = "karpenter"
   enable_pod_identity             = true
   create_pod_identity_association = true
@@ -103,8 +70,6 @@ module "karpenter" {
   tags = {
     Environment = var.env
   }
-
-  depends_on = [module.eks]
 }
 
 #########################################################################################################
@@ -122,11 +87,11 @@ resource "helm_release" "karpenter" {
 
   set {
     name  = "settings.clusterName"
-    value = module.eks.cluster_name
+    value = data.terraform_remote_state.infra.outputs.cluster_name
   }
   set {
     name  = "settings.clusterEndpoint"
-    value = module.eks.cluster_endpoint
+    value = data.terraform_remote_state.infra.outputs.cluster_endpoint
   }
   set {
     name  = "serviceAccount.name"
@@ -161,10 +126,10 @@ resource "kubectl_manifest" "karpenter_node_class" {
       role: "${module.karpenter.node_iam_role_name}"
       subnetSelectorTerms:
         - tags:
-            karpenter.sh/discovery: "${module.eks.cluster_name}"
+            karpenter.sh/discovery: "${data.terraform_remote_state.infra.outputs.cluster_name}"
       securityGroupSelectorTerms:
         - tags:
-            karpenter.sh/discovery: "${module.eks.cluster_name}"
+            karpenter.sh/discovery: "${data.terraform_remote_state.infra.outputs.cluster_name}"
   YAML
 
   depends_on = [helm_release.karpenter]
@@ -241,14 +206,4 @@ resource "kubernetes_namespace" "retrogame" {
   metadata {
     name = "retrogame"
   }
-
-  depends_on = [module.eks]
 }
-
-
-
-
-
-
-
-

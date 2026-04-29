@@ -120,7 +120,14 @@ jobs:
       - run: terraform validate
 
       - name: Terraform Plan
-        run: terraform plan -no-color -input=false -lock=true -out=planfile --var-file=terraform.tfvars
+        run: |
+          terraform plan \
+            -no-color \
+            -input=false \
+            -lock=true \
+            -out=planfile \
+            --var-file=terraform.tfvars \
+            -var="grafana_password=${{ secrets.GRAFANA_PASSWORD }}"
 
       - name: Terraform Apply
         if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && env.TF_DESTROY == 'false' }}
@@ -148,4 +155,9 @@ jobs:
 
       - name: Terraform Destroy
         if: ${{ env.TF_DESTROY == 'true' }}
-        run: terraform destroy --var-file=terraform.tfvars -lock=false -auto-approve
+        run: |
+          terraform destroy \
+            --var-file=terraform.tfvars \
+            -var="grafana_password=${{ secrets.GRAFANA_PASSWORD }}" \
+            -lock=false \
+            -auto-approve

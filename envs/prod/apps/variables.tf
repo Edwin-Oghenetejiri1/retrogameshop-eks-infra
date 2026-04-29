@@ -9,3 +9,9 @@ variable "env" {
 variable "repo_url" {
   type = string
 }
+
+variable "grafana_password" {
+  type        = string
+  description = "Grafana admin password"
+  sensitive   = true
+}

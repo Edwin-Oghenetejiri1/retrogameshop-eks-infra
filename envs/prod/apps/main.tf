@@ -207,3 +207,65 @@ resource "kubernetes_namespace" "retrogame" {
     name = "retrogame"
   }
 }
+
+#########################################################################################################
+#                                      PROMETHEUS + GRAFANA                                             #
+#########################################################################################################
+resource "helm_release" "kube_prometheus_stack" {
+  name             = "kube-prometheus-stack"
+  repository       = "https://prometheus-community.github.io/helm-charts"
+  chart            = "kube-prometheus-stack"
+  namespace        = "monitoring"
+  create_namespace = true
+  wait             = true
+  depends_on       = [helm_release.alb_controller]
+
+  set {
+    name  = "grafana.adminPassword"
+    value = var.grafana_password
+  }
+
+  # Grafana ingress via ALB
+  set {
+    name  = "grafana.ingress.enabled"
+    value = "true"
+  }
+  set {
+    name  = "grafana.ingress.ingressClassName"
+    value = "alb"
+  }
+  set {
+    name  = "grafana.ingress.annotations.alb\\.ingress\\.kubernetes\\.io/scheme"
+    value = "internet-facing"
+  }
+  set {
+    name  = "grafana.ingress.annotations.alb\\.ingress\\.kubernetes\\.io/target-type"
+    value = "ip"
+  }
+  set {
+    name  = "grafana.ingress.annotations.alb\\.ingress\\.kubernetes\\.io/listen-ports"
+    value = "[{\"HTTP\": 80}]"
+  }
+  set {
+    name  = "grafana.ingress.annotations.alb\\.ingress\\.kubernetes\\.io/healthcheck-path"
+    value = "/api/health"
+  }
+  set {
+    name  = "grafana.ingress.annotations.alb\\.ingress\\.kubernetes\\.io/success-codes"
+    value = "200"
+  }
+  set {
+    name  = "grafana.ingress.paths[0]"
+    value = "/"
+  }
+
+  # Scrape retrogame namespace
+  set {
+    name  = "prometheus.prometheusSpec.podMonitorNamespaceSelector.matchLabels.monitoring"
+    value = "true"
+  }
+  set {
+    name  = "prometheus.prometheusSpec.serviceMonitorNamespaceSelector.matchLabels.monitoring"
+    value = "true"
+  }
+}

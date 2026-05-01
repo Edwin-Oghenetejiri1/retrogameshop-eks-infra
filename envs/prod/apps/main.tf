@@ -228,7 +228,7 @@ resource "helm_release" "kube_prometheus_stack" {
   # Grafana ingress via ALB
   set {
     name  = "grafana.ingress.enabled"
-    value = "true"
+    value = "false"
   }
   set {
     name  = "grafana.ingress.ingressClassName"

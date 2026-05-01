@@ -26,5 +26,3 @@ module "eks" {
 
 
 
-
-

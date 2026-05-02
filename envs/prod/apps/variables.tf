@@ -13,5 +13,6 @@ variable "repo_url" {
 variable "grafana_password" {
   type        = string
   description = "Grafana admin password"
+  default     = "admin123"
   sensitive   = true
 }

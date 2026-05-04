@@ -5,3 +5,6 @@
 .terraform.lock.hcl
 *.pem
 .env
+*.tar.gz
+*.zip
+eksctl

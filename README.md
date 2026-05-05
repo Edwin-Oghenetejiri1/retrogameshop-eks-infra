@@ -136,6 +136,7 @@ retrogameshop-eks-infra/
 ## 🔄 CI/CD Pipeline
 
 The infrastructure is deployed automatically via GitHub Actions using two sequential jobs:
+```
 Push to main branch
 ↓
 ┌─────────────────────────────┐
@@ -161,6 +162,8 @@ Push to main branch
 │  5. kubectl get nodes       │
 │  6. kubectl get pods -A     │
 └─────────────────────────────┘
+
+```
 
 > **Why two jobs?** EKS must exist before Helm charts can be installed. 
 > Splitting into `infra` and `apps` with `needs: deploy-infra` solves the 

@@ -430,7 +430,7 @@ To import: **Dashboards → New → Import → Enter ID → Load → Select Prom
 ```bash
 kubectl get pods -A
 ```
-![Pods](pods/ingress.png)
+![Pods](screenshots/pods.png)
 
 ---
 
@@ -438,7 +438,7 @@ kubectl get pods -A
 
 Check targets are healthy in AWS Console:
 
-![Targets](alb/ingress.png)
+![Targets](screenshots/alb.png)
 
 EC2 → Target Groups → select each target group → Targets tab
 

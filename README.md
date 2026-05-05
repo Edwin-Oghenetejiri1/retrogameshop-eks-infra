@@ -438,7 +438,7 @@ kubectl get pods -A
 
 Check targets are healthy in AWS Console:
 
-![Pods](alb/ingress.png)
+![Targets](alb/ingress.png)
 
 EC2 → Target Groups → select each target group → Targets tab
 
@@ -458,14 +458,6 @@ https://retrogameshop.online
 > Go to **Route 53 → retrogameshop.online → A record → Edit → select new ALB**
 
 ---
-
-### 7. Access the Live Application
-
-
-
-
-
-
 
 ## 🔗 Related Repositories
 

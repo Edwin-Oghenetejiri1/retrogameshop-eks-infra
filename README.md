@@ -383,6 +383,7 @@ kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.pas
 
 Login with:
 Username: admin
+
 Password: <output from above command>
 
 Verify retrogame-app is synced:
@@ -410,7 +411,9 @@ kubectl get secret -n monitoring kube-prometheus-stack-grafana \
 ```
 
 Login with:
+
 Username: admin
+
 Password: <output from above command>
 
 Import these dashboards for cluster visibility:

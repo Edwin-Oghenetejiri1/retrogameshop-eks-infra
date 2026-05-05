@@ -385,7 +385,7 @@ Login with:
 
 Username: admin
 
-Password: <output from above command>
+Password: (output from above command)
 
 Verify retrogame-app is synced:
 ```bash
@@ -415,7 +415,7 @@ Login with:
 
 Username: admin
 
-Password: <output from above command>
+Password: (output from above command)
 
 Import these dashboards for cluster visibility:
 

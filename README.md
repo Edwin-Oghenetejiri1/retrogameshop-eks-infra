@@ -309,6 +309,164 @@ kubectl get ingress -A
 
 ---
 
+## ⚙️ Post Deployment Steps
+
+After `terraform apply` completes and kubectl is configured, follow these steps
+to get everything fully working:
+
+---
+### 1. Create ALB Controller IAM Policy
+
+Download the official IAM policy:
+```bash
+curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.2/docs/install/iam_policy.json
+```
+
+Create the policy in AWS:
+```bash
+aws iam create-policy \
+  --policy-name AWSLoadBalancerControllerIAMPolicy \
+  --policy-document file://iam_policy.json
+```
+
+Create the IAM service account:
+```bash
+eksctl create iamserviceaccount \
+  --cluster=retrogame-eks \
+  --namespace=kube-system \
+  --name=aws-load-balancer-controller \
+  --attach-policy-arn=arn:aws:iam::<YOUR_ACCOUNT_ID>:policy/AWSLoadBalancerControllerIAMPolicy \
+  --region=us-east-1 \
+  --approve
+```
+
+Restart the ALB controller to pick up the new role:
+```bash
+kubectl rollout restart deployment aws-load-balancer-controller -n kube-system
+```
+
+Verify the annotation is present:
+```bash
+kubectl describe serviceaccount aws-load-balancer-controller -n kube-system | grep eks.amazonaws.com
+```
+
+---
+
+### 2. Apply ArgoCD Application and Ingress
+
+```bash
+kubectl apply -f application.yaml
+kubectl apply -f ingress.yaml
+```
+
+Wait 2-3 minutes then verify ALBs are provisioned:
+```bash
+kubectl get ingress -A
+```
+
+Expected output:
+![Ingress](screenshots/ingress.png)
+
+---
+
+### 3. Access ArgoCD
+
+Get the ArgoCD URL:
+```bash
+kubectl get ingress -n argocd
+```
+
+Get the ArgoCD admin password:
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+```
+
+Login with:
+Username: admin
+Password: <output from above command>
+
+Verify retrogame-app is synced:
+```bash
+kubectl get application -n argocd
+```
+
+Expected output:
+NAME            SYNC STATUS   HEALTH STATUS
+retrogame-app   Synced        Healthy
+
+---
+
+### 4. Access Grafana
+
+Get the Grafana URL:
+```bash
+kubectl get ingress -n monitoring
+```
+
+Get the Grafana admin password:
+```bash
+kubectl get secret -n monitoring kube-prometheus-stack-grafana \
+  -o jsonpath="{.data.admin-password}" | base64 -d
+```
+
+Login with:
+Username: admin
+Password: <output from above command>
+
+Import these dashboards for cluster visibility:
+
+| Dashboard ID | Description |
+|---|---|
+| `3119` | Kubernetes cluster overview |
+| `6417` | Pod resource usage per namespace |
+| `1860` | Node exporter — EC2 node health |
+
+To import: **Dashboards → New → Import → Enter ID → Load → Select Prometheus → Import**
+
+---
+
+### 5. Verify All Pods Are Running
+
+```bash
+kubectl get pods -A
+```
+![Pods](pods/ingress.png)
+
+---
+
+### 6. Verify ALB Target Health
+
+Check targets are healthy in AWS Console:
+
+![Pods](alb/ingress.png)
+
+EC2 → Target Groups → select each target group → Targets tab
+
+Or via CLI:
+```bash
+aws elbv2 describe-target-groups \
+  --query 'TargetGroups[*].[TargetGroupName,TargetGroupArn]' \
+  --output table \
+  --region us-east-1
+```
+
+### 7. Access the Live Application
+https://retrogameshop.online
+
+> **Note:** If you redeploy the infrastructure the ALB URL changes.
+> Update the Route 53 A record alias to point to the new ALB DNS name.
+> Go to **Route 53 → retrogameshop.online → A record → Edit → select new ALB**
+
+---
+
+### 7. Access the Live Application
+
+
+
+
+
+
+
 ## 🔗 Related Repositories
 
 | Repository | Description |
